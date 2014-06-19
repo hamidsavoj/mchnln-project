@@ -1,0 +1,86 @@
+# Human Activity Recognition
+
+## Synopsis
+
+This document presents an approach for using data from various sensors attached to a weight lifter to predict if  the weight lifting is done properly. Six subjects are asked to perform ten repetitions of the Unilateral Dumbbell Biceps Curl in five different ways. The various approaches to lifting are classified as: A, B, C, D, and E. The correct lifing according to specification is labled A, throwing the elbows to the front is labled B, lifting the dumbbell only halfway is labled C, lowering the dumbbell only halfway is labled,  and finally throwing the hips to the front is labled B. Our objective is to build a predicitve model using the provided data to classify a particular weight lifting incident into one of the 5 possible classification.
+
+## Loading and preprocessing the data
+The data is directly read from the web site provided to us.
+```{r}
+library(caret)
+temp <- tempfile()
+fileUrl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileUrl, temp, method="curl")
+data <- read.csv(temp)
+unlink(temp)
+
+fileUrl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileUrl, temp, method="curl")
+goldenTestData <- read.csv(temp)
+unlink(temp)
+
+```
+
+
+## Data Processing
+
+The data has 19622 rows and 160 columns. Our first task is to remove irrelevant columns. We counted the number of elements in each column that are NA's or missing item using the following code and plotted a histogram showing columns with missing values. The histogram shows a clear pattern where some columns have all data and some have 19216 items missing. The columns with missing items are removed first resulting in 60 remaining columns. We further removed the first 6 columns which are username, timestamp, index, or new_window. This resulted in 54 columns.
+
+
+```{r}
+badCol<-colSums(apply(data, 2, function(x) as.character(x)=="" | is.na(x)))
+hist(badCol, xlab="Number of missing data or NA's in a column", main="Unimportant Columns of Data", col="red")
+cleanData<-data[,badCol<15000]
+## remove columns 1 through 6 which are X, username, timestamp, and new_window
+cleanData<-cleanData[, -(1:6)]
+```
+
+Data is divided into training and testing. Since the number of rows in large, only 50% of rows are put into training set. The training data is preprossed to  find principle components. All components are centered and scaled. It turns out that 25 components can capture 95% of the variance further reducing the number of columns. We limited our analysis to 25 components. The same preprocessing is done on test data to cross validate.
+
+
+```{r}
+
+set.seed(1235)
+inTrain<-createDataPartition(y=cleanData$classe, p=0.5, list=FALSE)
+training<-cleanData[inTrain,]
+testing<-cleanData[-inTrain,]
+
+preProc<-preProcess(training[,-54], method=c("center", "scale", "pca"), thresh = 0.95)
+preProc
+```
+
+A plotting of principle component 1 versus 2 already shows good separation in classe clusters as shown in the qplot below. Notice that the labels in classe are colored differently. A plot of principle component 24 versus 25 shows much less differentiation in the clusters as shown the qplot below.
+
+```{r}
+trainPC<-predict(preProc, training[,-54])
+qplot(trainPC[,1], trainPC[,2], colour=training$classe, xlab="Principle Component 1", ylab="principle component 2")
+
+qplot(trainPC[,24], trainPC[,25], colour=training$classe, xlab="Principle Component 24", ylab="principle component 25")
+```
+
+
+We used random forest for training and prediciotn to get good accuracy although the runtimes are high. The accuracy on the training is 100% as shown from the print out of confusion matrix plotting predicted classe versus actual classe.
+
+```{r}
+modelFit<-train(training$classe~., method="rf", data=trainPC)
+confusionMatrix(training$classe, predict(modelFit, trainPC))
+```
+
+## Results
+
+After preprocessing and model fitting of the test datae, the out of sample accuracy is close 97%. The confusion matrix for the test data is printed below.
+
+```{r}
+testPC<-predict(preProc, testing[,-54])
+confusionMatrix(testing$classe, predict(modelFit, testPC))
+```
+
+The analysis of 20 test cases for the assignment is shown below.
+
+```{r}
+cleanGoldenTest<-goldenTestData[, colnames(training)[1:53]]
+goldenTestPC<-predict(preProc, cleanGoldenTest)
+answers<-predict(modelFit, goldenTestPC)
+answers
+```
+
